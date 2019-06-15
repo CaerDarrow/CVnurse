@@ -50,11 +50,7 @@ def osteochondrosis(image):
     humans = e.inference(image, resize_to_default=(w > 0 and h > 0), upsample_size=4.0)
     for human in humans:
         pose_2d_mpii, visibility = common.MPIIPart.from_coco(human)
-#         pose_2d_mpiis.append(
-#             [(int(x * 432 + 0.5), int(y * 368 + 0.5)) for x, y in pose_2d_mpii]
-#         )
-#         visibilities.append(visibility)
-        print(pose_2d_mpii[2][1], pose_2d_mpii[5][1])
+        print(np.divide((pose_2d_mpii[2][1], pose_2d_mpii[5][1], (pose_2d_mpii[5][0] - pose_2d_mpii[2][0])), osteo_etalon))
 
         
 def osteo_set_etalon(image):    
@@ -62,12 +58,7 @@ def osteo_set_etalon(image):
     humans = e.inference(image, resize_to_default=(w > 0 and h > 0), upsample_size=4.0)
     for human in humans:
         pose_2d_mpii, visibility = common.MPIIPart.from_coco(human)
-#         pose_2d_mpiis.append(
-#             [(int(x * 432 + 0.5), int(y * 368 + 0.5)) for x, y in pose_2d_mpii]
-#         )
-#         visibilities.append(visibility)
-        osteo_etalon.append([pose_2d_mpii[2][1], pose_2d_mpii[5][1]])
-        
+        osteo_etalon.append((pose_2d_mpii[2][1], pose_2d_mpii[5][1], (pose_2d_mpii[5][0] - pose_2d_mpii[2][0])))
 #         image = TfPoseEstimator.draw_humans(image, humans, imgcopy=False)
 #         if (ON_OFF_VIDEO != 0):
 #             cv2.imshow('Video', image)
