@@ -50,12 +50,21 @@ def eye_aspect_ratio(eye):
 def osteochondrosis(image, osteo_switch):
     w, h = model_wh('432x368') 
     humans = e.inference(image, resize_to_default=(w > 0 and h > 0), upsample_size=4.0)
+    max_dif = 0
+    num = 0
+    main_human = humans[0]
     for human in humans:
         pose_2d_mpii, visibility = common.MPIIPart.from_coco(human)
+        shoulder_dif = abs(pose_2d_mpii[2][0] - pose_2d_mpii[5][0])
+        if (shoulder_dif > max_dif):
+            max_dif = shoulder_dif
+            main_human = human
+    pose_2d_mpii, visibility = common.MPIIPart.from_coco(main_human)
     if osteo_switch and pose_2d_mpii[2] and pose_2d_mpii[5]:
         osteo_etalon.append((pose_2d_mpii[2][1], pose_2d_mpii[5][1], (pose_2d_mpii[2][0] - pose_2d_mpii[5][0])))
     elif pose_2d_mpii[2] and pose_2d_mpii[5]:
         print(np.divide((pose_2d_mpii[2][1], pose_2d_mpii[5][1], (pose_2d_mpii[2][0] - pose_2d_mpii[5][0])), osteo_etalon))
+        num += 1
     image = TfPoseEstimator.draw_humans(image, humans, imgcopy=False)
     
         
@@ -87,7 +96,7 @@ while(True):
     elif seconds == 20 and len(osteo_etalon) != 3:
         osteo_etalon = np.mean(osteo_etalon, axis=0) 
         print(osteo_etalon)
-    elif seconds % 20 == 0:
+    elif ((int(seconds) % 20) == 0):
         osteochondrosis(frame, GET_OSTEO)
     else:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
