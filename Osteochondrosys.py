@@ -66,7 +66,6 @@ def osteo_set_etalon(image):
 #             [(int(x * 432 + 0.5), int(y * 368 + 0.5)) for x, y in pose_2d_mpii]
 #         )
 #         visibilities.append(visibility)
-        pose_2d_mpii = np.average(pose_2d_mpii)
         osteo_etalon.append([pose_2d_mpii[2][1], pose_2d_mpii[5][1]])
         
 #         image = TfPoseEstimator.draw_humans(image, humans, imgcopy=False)
@@ -99,8 +98,8 @@ while(True):
         while (frame_time - start_time < 20.0):
             ret, frame = video_capture.read()
             osteo_set_etalon(frame)
-            pose_2d_mpii = np.average(osteo_etalon)
-            frame_time = time.time()       
+            frame_time = time.time()
+        osteo_etalon = np.mean(osteo_etalon, axis=0)
         print(osteo_etalon)
     elif int(frame_time - start_time) % 20 == 0:
         osteochondrosis(frame)
