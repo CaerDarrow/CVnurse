@@ -48,14 +48,13 @@ def eye_aspect_ratio(eye):
     return ear
 
 def osteochondrosis(image, osteo_switch):
-    i = 0
     w, h = model_wh('432x368') 
     humans = e.inference(image, resize_to_default=(w > 0 and h > 0), upsample_size=4.0)
     for human in humans:
         pose_2d_mpii, visibility = common.MPIIPart.from_coco(human)
-    if osteo_switch:
+    if osteo_switch and pose_2d_mpii[2] and pose_2d_mpii[5]:
         osteo_etalon.append((pose_2d_mpii[2][1], pose_2d_mpii[5][1], (pose_2d_mpii[2][0] - pose_2d_mpii[5][0])))
-    else:
+    elif pose_2d_mpii[2] and pose_2d_mpii[5]:
         print(np.divide((pose_2d_mpii[2][1], pose_2d_mpii[5][1], (pose_2d_mpii[2][0] - pose_2d_mpii[5][0])), osteo_etalon))
     image = TfPoseEstimator.draw_humans(image, humans, imgcopy=False)
     
@@ -64,7 +63,7 @@ def osteochondrosis(image, osteo_switch):
 #Load face detector and predictor, uses dlib shape predictor file
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
-e = TfPoseEstimator(get_graph_path('cmu'), target_size=(432, 368)) 
+e = TfPoseEstimator(get_graph_path('mobilenet_thin'), target_size=(432, 368)) 
 #Extract indexes of facial landmarks for the left and right eye
 (lStart, lEnd) = face_utils.FACIAL_LANDMARKS_IDXS['left_eye']
 (rStart, rEnd) = face_utils.FACIAL_LANDMARKS_IDXS['right_eye']
@@ -85,7 +84,7 @@ while(True):
     frame = cv2.flip(frame,1) 
     if seconds < 20.0:
         osteochondrosis(frame, SET_OSTEO)
-    elif seconds == 20:
+    elif seconds == 20 and len(osteo_etalon) != 3:
         osteo_etalon = np.mean(osteo_etalon, axis=0) 
         print(osteo_etalon)
     elif seconds % 20 == 0:
