@@ -80,14 +80,15 @@ start_time = time.time()
 frame_time = 0
 while(True):
     #Read each frame and flip it, and convert to grayscale
+    seconds = int(frame_time - start_time)
     ret, frame = video_capture.read()
     frame = cv2.flip(frame,1) 
-    if (frame_time - start_time) < 20.0:
+    if seconds < 20.0:
         osteochondrosis(frame, SET_OSTEO)
-    elif (frame_time - start_time) == 20.0:
+    elif seconds == 20:
         osteo_etalon = np.mean(osteo_etalon, axis=0) 
         print(osteo_etalon)
-    elif int(frame_time - start_time) % 20 == 0:
+    elif seconds % 20 == 0:
         osteochondrosis(frame, GET_OSTEO)
     else:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
