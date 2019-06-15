@@ -18,6 +18,10 @@ from tf_pose.networks import get_graph_path, model_wh
 ON_OFF_VIDEO = 1
 ON_OFF_MUSIK = 1
 
+#OSTEO_SWITCH
+SET_OSTEO = True
+GET_OSTEO = False 
+
 #Initialize Pygame and load music
 pygame.mixer.init()
 pygame.mixer.music.load('audio/alert.wav')
@@ -43,25 +47,19 @@ def eye_aspect_ratio(eye):
     ear = (A+B) / (2*C)
     return ear
 
-
-def osteochondrosis(image):
-    pose_2d_mpiis = []
+def osteochondrosis(image, osteo_switch):
+    i = 0
     w, h = model_wh('432x368') 
     humans = e.inference(image, resize_to_default=(w > 0 and h > 0), upsample_size=4.0)
     for human in humans:
         pose_2d_mpii, visibility = common.MPIIPart.from_coco(human)
-        print(np.divide((pose_2d_mpii[2][1], pose_2d_mpii[5][1], (pose_2d_mpii[5][0] - pose_2d_mpii[2][0])), osteo_etalon))
-
+    if osteo_switch:
+        osteo_etalon.append((pose_2d_mpii[2][1], pose_2d_mpii[5][1], (pose_2d_mpii[2][0] - pose_2d_mpii[5][0])))
+    else:
+        print(np.divide((pose_2d_mpii[2][1], pose_2d_mpii[5][1], (pose_2d_mpii[2][0] - pose_2d_mpii[5][0])), osteo_etalon))
+    image = TfPoseEstimator.draw_humans(image, humans, imgcopy=False)
+    
         
-def osteo_set_etalon(image):    
-    w, h = model_wh('432x368') 
-    humans = e.inference(image, resize_to_default=(w > 0 and h > 0), upsample_size=4.0)
-    for human in humans:
-        pose_2d_mpii, visibility = common.MPIIPart.from_coco(human)
-        osteo_etalon.append((pose_2d_mpii[2][1], pose_2d_mpii[5][1], (pose_2d_mpii[5][0] - pose_2d_mpii[2][0])))
-#         image = TfPoseEstimator.draw_humans(image, humans, imgcopy=False)
-#         if (ON_OFF_VIDEO != 0):
-#             cv2.imshow('Video', image)
 
 #Load face detector and predictor, uses dlib shape predictor file
 detector = dlib.get_frontal_face_detector()
@@ -77,69 +75,64 @@ video_capture = cv2.VideoCapture(0)
 #Give some time for camera to initialize(not required)
 #time.sleep(2)
 
-c = 0
-osteo_flag = False
 osteo_etalon = []
 start_time = time.time()
 frame_time = 0
 while(True):
     #Read each frame and flip it, and convert to grayscale
     ret, frame = video_capture.read()
-    if (frame_time - start_time) < 0:
-        while (frame_time - start_time < 20.0):
-            ret, frame = video_capture.read()
-            osteo_set_etalon(frame)
-            frame_time = time.time()
-        osteo_etalon = np.mean(osteo_etalon, axis=0)
+    frame = cv2.flip(frame,1) 
+    if (frame_time - start_time) < 20.0:
+        osteochondrosis(frame, SET_OSTEO)
+    elif (frame_time - start_time) == 20.0:
+        osteo_etalon = np.mean(osteo_etalon, axis=0) 
         print(osteo_etalon)
     elif int(frame_time - start_time) % 20 == 0:
-        osteochondrosis(frame)
-        
-    frame = cv2.flip(frame,1)
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        osteochondrosis(frame, GET_OSTEO)
+    else:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        #Detect facial points through detector function
+        faces = detector(gray, 0)
+        #Detect faces through haarcascade_frontalface_default.xml
+        face_rectangle = face_cascade.detectMultiScale(gray, 1.3, 5)
 
-    #Detect facial points through detector function
-    faces = detector(gray, 0)
-    #Detect faces through haarcascade_frontalface_default.xml
-    face_rectangle = face_cascade.detectMultiScale(gray, 1.3, 5)
+        #Draw rectangle around each face detected
+        for (x,y,w,h) in face_rectangle:
+            cv2.rectangle(frame,(x,y),(x+w,y+h),(255,0,0),2)
 
-    #Draw rectangle around each face detected
-    for (x,y,w,h) in face_rectangle:
-        cv2.rectangle(frame,(x,y),(x+w,y+h),(255,0,0),2)
-    
-    #Detect facial points
-    for face in faces:
+        #Detect facial points
+        for face in faces:
 
-        shape = predictor(gray, face)
-        shape = face_utils.shape_to_np(shape)
+            shape = predictor(gray, face)
+            shape = face_utils.shape_to_np(shape)
 
-        #Get array of coordinates of leftEye and rightEye
-        leftEye = shape[lStart:lEnd]
-        rightEye = shape[rStart:rEnd]
+            #Get array of coordinates of leftEye and rightEye
+            leftEye = shape[lStart:lEnd]
+            rightEye = shape[rStart:rEnd]
 
-        #Calculate aspect ratio of both eyes
-        leftEyeAspectRatio = eye_aspect_ratio(leftEye)
-        rightEyeAspectRatio = eye_aspect_ratio(rightEye)
+            #Calculate aspect ratio of both eyes
+            leftEyeAspectRatio = eye_aspect_ratio(leftEye)
+            rightEyeAspectRatio = eye_aspect_ratio(rightEye)
 
-        eyeAspectRatio = (leftEyeAspectRatio + rightEyeAspectRatio) / 2
+            eyeAspectRatio = (leftEyeAspectRatio + rightEyeAspectRatio) / 2
 
-        #Use hull to remove convex contour discrepencies and draw eye shape around eyes
-        leftEyeHull = cv2.convexHull(leftEye)
-        rightEyeHull = cv2.convexHull(rightEye)
-        cv2.drawContours(frame, [leftEyeHull], -1, (0, 255, 0), 1)
-        cv2.drawContours(frame, [rightEyeHull], -1, (0, 255, 0), 1)
+            #Use hull to remove convex contour discrepencies and draw eye shape around eyes
+            leftEyeHull = cv2.convexHull(leftEye)
+            rightEyeHull = cv2.convexHull(rightEye)
+            cv2.drawContours(frame, [leftEyeHull], -1, (0, 255, 0), 1)
+            cv2.drawContours(frame, [rightEyeHull], -1, (0, 255, 0), 1)
 
-        #Detect if eye aspect ratio is less than threshold
-        if(eyeAspectRatio > EYE_ASPECT_RATIO_THRESHOLD):
-            COUNTER += 1
-            #If no. of frames is greater than threshold frames,
-            if COUNTER >= EYE_ASPECT_RATIO_CONSEC_FRAMES:
-                if (ON_OFF_MUSIK != 0):
-                    pygame.mixer.music.play(-1)
-                cv2.putText(frame, "Blink please", (150,200), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0,0,255), 2)
-        else:
-            pygame.mixer.music.stop()
-            COUNTER = 0
+            #Detect if eye aspect ratio is less than threshold
+            if(eyeAspectRatio > EYE_ASPECT_RATIO_THRESHOLD):
+                COUNTER += 1
+                #If no. of frames is greater than threshold frames,
+                if COUNTER >= EYE_ASPECT_RATIO_CONSEC_FRAMES:
+                    if (ON_OFF_MUSIK != 0):
+                        pygame.mixer.music.play(-1)
+                    cv2.putText(frame, "Blink please", (150,200), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0,0,255), 2)
+            else:
+                pygame.mixer.music.stop()
+                COUNTER = 0
         
     #Show video feed
     if (ON_OFF_VIDEO != 0):
