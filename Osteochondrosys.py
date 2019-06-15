@@ -47,7 +47,7 @@ def eye_aspect_ratio(eye):
     ear = (A+B) / (2*C)
     return ear
 
-def osteochondrosis(image, osteo_switch):
+def osteochondrosis(image, osteo_switch, osteo_etalon):
     w, h = model_wh('432x368') 
     humans = e.inference(image, resize_to_default=(w > 0 and h > 0), upsample_size=4.0)
     max_dif = 0
@@ -65,9 +65,17 @@ def osteochondrosis(image, osteo_switch):
     elif pose_2d_mpii[2] and pose_2d_mpii[5]:
         print(np.divide((pose_2d_mpii[2][1], pose_2d_mpii[5][1], (pose_2d_mpii[2][0] - pose_2d_mpii[5][0])), osteo_etalon))
         num += 1
-    image = TfPoseEstimator.draw_humans(image, humans, imgcopy=False)
+    image = TfPoseEstimator.draw_humans(image, [main_human], imgcopy=False)
     
-        
+def calibration(image):
+    osteo_etalon_array = []
+    osteochondrosis(frame, True, osteo_etalon_array)
+    return osteo_etalon_array
+    
+def checker(image, osteo_etalon_array):
+    osteo_etalon = np.mean(osteo_etalon_array, axis=0)
+    osteochondrosis(frame, False, osteo_etalon)
+    
 
 #Load face detector and predictor, uses dlib shape predictor file
 detector = dlib.get_frontal_face_detector()
@@ -83,7 +91,6 @@ video_capture = cv2.VideoCapture(0)
 #Give some time for camera to initialize(not required)
 #time.sleep(2)
 
-osteo_etalon = []
 start_time = time.time()
 frame_time = 0
 while(True):
@@ -92,12 +99,16 @@ while(True):
     ret, frame = video_capture.read()
     frame = cv2.flip(frame,1) 
     if seconds < 20.0:
-        osteochondrosis(frame, SET_OSTEO)
+        osteo_etalon_array = calibration(frame)
+        #osteochondrosis(frame, SET_OSTEO, osteo_etalon)
+        '''
     elif seconds == 20 and len(osteo_etalon) != 3:
         osteo_etalon = np.mean(osteo_etalon, axis=0) 
         print(osteo_etalon)
+        '''
     elif ((int(seconds) % 20) == 0):
-        osteochondrosis(frame, GET_OSTEO)
+        #osteochondrosis(frame, GET_OSTEO, osteo_etalon)
+        checker(frame, osteo_etalon_array)
     else:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         #Detect facial points through detector function
