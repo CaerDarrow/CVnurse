@@ -16,13 +16,8 @@ from PyQt5 import QtCore
 from PyQt5 import QtWidgets
 from PyQt5 import QtGui
 import sys
-from PyQt5.QtWidgets import QCheckBox
+from PyQt5.QtWidgets import QCheckBox, QMessageBox
 import pync
-
-#"ON / OFF" variables
-ON_OFF_VIDEO = 1
-ON_OFF_MUSIK = 1
-NOTIFICATION = 1
 
 class spine_class():
     humans = 0
@@ -35,43 +30,53 @@ class spine_class():
         self.e = TfPoseEstimator(get_graph_path('mobilenet_thin'), target_size=(432, 368)) 
         
     def add(self, pose_2d_mpii):
-        self.osteo_etalon.append((pose_2d_mpii[2][1], pose_2d_mpii[5][1], abs(pose_2d_mpii[5][0] - pose_2d_mpii[2][0])))
+        self.osteo_etalon.append((pose_2d_mpii[2][1], pose_2d_mpii[5][1], abs(pose_2d_mpii[5][0] - pose_2d_mpii[2][0]), abs(pose_2d_mpii[0][1] - pose_2d_mpii[1][1])))
         
     def get(self, pose_2d_mpii):
-        print(np.divide((pose_2d_mpii[2][1], pose_2d_mpii[5][1], abs(pose_2d_mpii[5][0] - pose_2d_mpii[2][0])), self.osteo_etalon))
+        estim = np.divide((pose_2d_mpii[2][1], pose_2d_mpii[5][1], abs(pose_2d_mpii[5][0] - pose_2d_mpii[2][0]), abs(pose_2d_mpii[0][1] - pose_2d_mpii[1][1])), self.osteo_etalon)
+        print(estim)
+        if (abs(pose_2d_mpii[5][1] - pose_2d_mpii[2][1]) > 0.05):
+            pync.notify("Correct the back!!!")
+        elif ((estim[2]/estim[3]) > 1.1):
+            pync.notify("Correct the back!!!")
+        elif (estim[2] > 1.1):
+            pync.notify("Go far from the screen!!!")
         
     def __call__(self, image):
         if self.calibrate:
             self.osteochondrosis(image, self.add)
-        elif self.calibrated and not self.calibrate and len(self.osteo_etalon) != 3:
+        elif self.calibrated and not self.calibrate and len(self.osteo_etalon) != 4:
             self.osteo_etalon = np.mean(self.osteo_etalon, axis=0)
             print(self.osteo_etalon)
         elif self.calibrated and self.call:
             self.osteochondrosis(image, self.get)
             
     def osteochondrosis(self, image, func):
-        w, h = model_wh('432x368') 
-        humans = self.e.inference(image, resize_to_default=(w > 0 and h > 0), upsample_size=4.0)
-        max_dif = 0
-        main_human = humans[0]
-        for human in humans:
-            pose_2d_mpii, visibility = common.MPIIPart.from_coco(human)
-            shoulder_dif = abs(pose_2d_mpii[2][0] - pose_2d_mpii[5][0])
-            if (shoulder_dif > max_dif):
-                max_dif = shoulder_dif
-                main_human = human
-        pose_2d_mpii, visibility = common.MPIIPart.from_coco(main_human)        
-        func(pose_2d_mpii)
-        image = TfPoseEstimator.draw_humans(image, [main_human], imgcopy=False)         
-       
+        w, h = model_wh('432x368')
+        try:
+            humans = self.e.inference(image, resize_to_default=(w > 0 and h > 0), upsample_size=4.0)
+            max_dif = 0
+            main_human = humans[0]
+            for human in humans:
+                pose_2d_mpii, visibility = common.MPIIPart.from_coco(human)
+                shoulder_dif = abs(pose_2d_mpii[2][0] - pose_2d_mpii[5][0])
+                if (shoulder_dif > max_dif):
+                    max_dif = shoulder_dif
+                    main_human = human
+            pose_2d_mpii, visibility = common.MPIIPart.from_coco(main_human)
+            func(pose_2d_mpii)
+            image = TfPoseEstimator.draw_humans(image, [main_human], imgcopy=False)
+        except:
+            pass
     
 class eye_class(): 
     #Minimum threshold of eye aspect ratio below which alarm is triggerd
-    EYE_ASPECT_RATIO_THRESHOLD = 0.2
+    EYE_ASPECT_RATIO_THRESHOLD = 0.25
     #Minimum consecutive frames for which eye ratio is below threshold for alarm to be triggered
-    EYE_ASPECT_RATIO_CONSEC_FRAMES = 3
+    EYE_ASPECT_RATIO_CONSEC_FRAMES = 6
     #COunts no. of consecutuve frames below threshold value
     COUNTER = time.time()
+    #"ON / OFF" variables
     
     def __init__(self):
         #Initialize Pygame and load music
@@ -85,8 +90,9 @@ class eye_class():
         #Extract indexes of facial landmarks for the left and right eye
         (self.lStart, self.lEnd) = face_utils.FACIAL_LANDMARKS_IDXS['left_eye']
         (self.rStart, self.rEnd) = face_utils.FACIAL_LANDMARKS_IDXS['right_eye']
-        
-    #This function calculates and return eye aspect ratio
+        self.ON_OFF_VIDEO = 1
+        self.ON_OFF_MUSIK = 1
+        self.NOTIFICATION = 1    #This function calculates and return eye aspect ratio
     def eye_aspect_ratio(self, eye):
         A = distance.euclidean(eye[1], eye[5])
         B = distance.euclidean(eye[2], eye[4])
@@ -120,21 +126,19 @@ class eye_class():
             cv2.drawContours(frame, [leftEyeHull], -1, (0, 255, 0), 1)
             cv2.drawContours(frame, [rightEyeHull], -1, (0, 255, 0), 1)
             #Detect if eye aspect ratio is less than threshold
-            global ON_OFF_MUSIK
-            global NOTIFICATION
             if(self.eyeAspectRatio > self.EYE_ASPECT_RATIO_THRESHOLD):
                 #If no. of frames is greater than threshold frames,
                 if time.time() - self.COUNTER >= self.EYE_ASPECT_RATIO_CONSEC_FRAMES:
-                    if (ON_OFF_MUSIK != 0):
+                    if (self.ON_OFF_MUSIK != 0):
                         pygame.mixer.music.play(-1)
                     start_alarm = time.time()
                     cv2.putText(frame, "Blink please", (150, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 2)
                     while (time.time() - start_alarm < 0.4):
                         pass
                     self.COUNTER = time.time()
-                    if (ON_OFF_MUSIK != 0):
+                    if (self.ON_OFF_MUSIK != 0):
                         pygame.mixer.music.stop()
-                    if NOTIFICATION != 0:
+                    if self.NOTIFICATION != 0:
                         pync.notify('Blink please')
 
             else:
@@ -166,6 +170,10 @@ class FaceDetectionWidget(QtWidgets.QWidget):
         return faces_rec
     
     def start_calibrate(self):
+        msg = QMessageBox()
+        msg.setText("Please sit right")
+        msg.setWindowTitle("Information Window")
+        msg.exec_()
         self.spine.calibrate = True
         QtCore.QTimer.singleShot(8000, self.calibrate)
     
@@ -178,6 +186,11 @@ class FaceDetectionWidget(QtWidgets.QWidget):
     def calibrate(self):
         self.spine.calibrate = False
         self.spine.calibrated = True
+        msg = QMessageBox()
+        msg.setText("Calibration Finished")
+        msg.setWindowTitle("Information Window")
+        msg.exec_()
+    #calibrate over
     
     def call_switch(self):
         self.spine.call = True
@@ -247,18 +260,11 @@ class MainWidget(QtWidgets.QWidget):
         self.setLayout(layout)
 
     def clickSound(self, state):
-        global ON_OFF_MUSIK
-        if state == QtCore.Qt.Checked:
-            ON_OFF_MUSIK = 1
-        else:
-            ON_OFF_MUSIK = 0
+        self.face_detection_widget.eye.ON_OFF_MUSIK = 1 if state == QtCore.Qt.Checked else 0
 
     def clickNotification(self, state):
-        global NOTIFICATION
-        if state == QtCore.Qt.Checked:
-            NOTIFICATION = 1
-        else:
-            NOTIFICATION = 0
+        self.face_detection_widget.eye.NOTIFICATION = 1 if state == QtCore.Qt.Checked else 0
+
 
 def main():    
     app = QtWidgets.QApplication(sys.argv)
