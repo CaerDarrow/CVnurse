@@ -2,32 +2,30 @@
 calculations. Uses webcam video feed as input.'''
 
 #Import necessary libraries
-from scipy.spatial import distance
-from imutils import face_utils
-import numpy as np
-import pygame #For playing sound
 import time
 import dlib
 import cv2
+import sys
+import pync
+import numpy as np
+from scipy.spatial import distance
+from imutils import face_utils
 from tf_pose import common
 from tf_pose.estimator import TfPoseEstimator
 from tf_pose.networks import get_graph_path, model_wh
-from PyQt5 import QtCore
-from PyQt5 import QtWidgets
-from PyQt5 import QtGui
-import sys
+from PyQt5 import QtCore, QtWidgets, QtGui
 from PyQt5.QtWidgets import QCheckBox, QMessageBox
-import pync
+from PyQt5.QtMultimedia import QSound
 
-class spine_class():
-    humans = 0
-    osteo_etalon = []
-    #CALIBRATE_SWITCH
-    calibrate = False
-    calibrated = False
-    call = False
+
+class Spine_class():
     def __init__(self):
-        self.e = TfPoseEstimator(get_graph_path('mobilenet_thin'), target_size=(432, 368)) 
+        self.humans = 0
+        self.osteo_etalon = []
+        self.calibrate = False
+        self.calibrated = False
+        self.call = False
+        self.e = TfPoseEstimator(get_graph_path('mobilenet_thin'), target_size=(432, 368))   
         
     def add(self, pose_2d_mpii):
         self.osteo_etalon.append((pose_2d_mpii[2][1], pose_2d_mpii[5][1], abs(pose_2d_mpii[5][0] - pose_2d_mpii[2][0]), abs(pose_2d_mpii[0][1] - pose_2d_mpii[1][1])))
@@ -69,19 +67,14 @@ class spine_class():
         except:
             pass
     
-class eye_class(): 
+class Eye_class(): 
     #Minimum threshold of eye aspect ratio below which alarm is triggerd
     EYE_ASPECT_RATIO_THRESHOLD = 0.25
     #Minimum consecutive frames for which eye ratio is below threshold for alarm to be triggered
     EYE_ASPECT_RATIO_CONSEC_FRAMES = 6
     #COunts no. of consecutuve frames below threshold value
     COUNTER = time.time()
-    #"ON / OFF" variables
-    
     def __init__(self):
-        #Initialize Pygame and load music
-        pygame.mixer.init()
-        pygame.mixer.music.load('audio/alert.wav')
         #Load face cascade which will be used to draw a rectangle around detected faces.
         self.face_cascade = cv2.CascadeClassifier("haarcascades/haarcascade_frontalface_default.xml")
          #Load face detector and predictor, uses dlib shape predictor file
@@ -92,7 +85,9 @@ class eye_class():
         (self.rStart, self.rEnd) = face_utils.FACIAL_LANDMARKS_IDXS['right_eye']
         self.ON_OFF_VIDEO = 1
         self.ON_OFF_MUSIK = 1
-        self.NOTIFICATION = 1    #This function calculates and return eye aspect ratio
+        self.NOTIFICATION = 1   
+    
+    #This function calculates and return eye aspect ratio
     def eye_aspect_ratio(self, eye):
         A = distance.euclidean(eye[1], eye[5])
         B = distance.euclidean(eye[2], eye[4])
@@ -129,20 +124,18 @@ class eye_class():
             if(self.eyeAspectRatio > self.EYE_ASPECT_RATIO_THRESHOLD):
                 #If no. of frames is greater than threshold frames,
                 if time.time() - self.COUNTER >= self.EYE_ASPECT_RATIO_CONSEC_FRAMES:
+                    
                     if (self.ON_OFF_MUSIK != 0):
-                        pygame.mixer.music.play(-1)
+                        QSound.play('audio/alert.wav')
                     start_alarm = time.time()
                     cv2.putText(frame, "Blink please", (150, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 2)
                     while (time.time() - start_alarm < 0.4):
                         pass
                     self.COUNTER = time.time()
-                    if (self.ON_OFF_MUSIK != 0):
-                        pygame.mixer.music.stop()
                     if self.NOTIFICATION != 0:
                         pync.notify('Blink please')
 
             else:
-                pygame.mixer.music.stop()
                 self.COUNTER = time.time()
         return face_rectangle
 
@@ -155,11 +148,13 @@ class FaceDetectionWidget(QtWidgets.QWidget):
         self._red = (0, 0, 255)
         self._width = 2
         self._min_size = (30, 30)
-        self.eye = eye_class()
-        self.spine = spine_class()
+        self.eye = Eye_class()
+        self.spine = Spine_class()
         self.camera = cv2.VideoCapture(camera_port)
-        self.timer = QtCore.QBasicTimer()
-        self.timer2 = QtCore.QTimer()
+        self.timer_recording = QtCore.QTimer()
+        self.timer_spine = QtCore.QTimer()
+        self_timer_eye = QtCore.QTimer()
+        
         
     def detect_faces(self, image: np.ndarray): 
         self.check_spine()    
@@ -175,23 +170,22 @@ class FaceDetectionWidget(QtWidgets.QWidget):
         msg.setWindowTitle("Information Window")
         msg.exec_()
         self.spine.calibrate = True
-        QtCore.QTimer.singleShot(8000, self.calibrate)
+        QtCore.QTimer.singleShot(8000, self.stop_calibrate)
     
     def check_spine(self):
         if self.spine.calibrated:
-            if not self.timer2.isActive():
-                self.timer2.start(10000)
-                self.timer2.timeout.connect(self.call_switch)
+            if not self.timer_spine.isActive():
+                self.timer_spine.start(10000)
+                self.timer_spine.timeout.connect(self.call_switch)
         
-    def calibrate(self):
+    def stop_calibrate(self):
         self.spine.calibrate = False
         self.spine.calibrated = True
         msg = QMessageBox()
         msg.setText("Calibration Finished")
         msg.setWindowTitle("Information Window")
         msg.exec_()
-    #calibrate over
-    
+       
     def call_switch(self):
         self.spine.call = True
         
@@ -226,12 +220,12 @@ class FaceDetectionWidget(QtWidgets.QWidget):
         self.image = QtGui.QImage()
 
     def start_recording(self):
-        self.timer.start(0, self)
-
-    def timerEvent(self, event):
-        if (event.timerId() != self.timer.timerId()):
-            return
+        self.timer_recording.start(3)
+        self.timer_recording.timeout.connect(self.read_frame)
+    
+    def read_frame(self):
         read, data = self.camera.read()
+        cv2.flip(data, 0)
         if read:
             self.image_data.emit(data)
 
